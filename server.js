@@ -200,7 +200,7 @@ app.post('/api/admin/photo/:id/toggle', (req, res) => {
 });
 
 // Delete photo
-app.post('/api/admin/photo/:id/delete', (req, res) => {
+app.post('/api/admin/photo/:id/delete', async (req, res) => {
   const { password } = req.body;
   if (!checkAdminPassword(password)) {
     return res.status(401).json({ error: 'Não autorizado' });
