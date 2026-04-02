@@ -1,0 +1,22 @@
+{
+  "name": "bianca-15-anos",
+  "version": "1.0.0",
+  "description": "Site de 15 anos da Bianca com upload de fotos via Cloudinary",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "bianca",
+    "15-anos",
+    "festa",
+    "galeria",
+    "cloudinary"
+  ],
+  "author": "Farofinha Dev",
+  "license": "MIT",
+  "engines": {
+    "node": "18.x"
+  }
+}
