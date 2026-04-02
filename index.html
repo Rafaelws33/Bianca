@@ -341,8 +341,10 @@ footer{text-align:center;padding:32px;background:var(--dark);border-top:1px soli
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
-// ══ CONFIG ══
-const API_URL = window.location.origin; // Mudará para https://seu-render-url.com quando deployar
+// ══ CONFIG (mude a senha abaixo) ══
+const ADMIN_PASSWORD = 'bianca2026';
+const CLOUDINARY_CLOUD_NAME = 'seu_cloud_name'; // Mude para seu Cloud Name
+const CLOUDINARY_UPLOAD_PRESET = 'BIANCA'; // Seu upload preset unsigned
 
 // ══ PETALS ══
 const PC=['#f5d6df','#c9748a','#f8d4be','#e8c4d0','#fce8d5'];
@@ -365,29 +367,12 @@ function uc(){
 }
 uc();setInterval(uc,1000);
 
-// ══ STORAGE (BACKEND) ══
-let photos = [];
-
-// Carregar fotos do servidor
-async function loadPhotos() {
-  try {
-    const res = await fetch(`${API_URL}/api/photos`);
-    photos = await res.json();
-    renderGallery();
-    renderCarousel();
-  } catch (e) {
-    console.error('Erro ao carregar fotos:', e);
-    showToast('Erro ao carregar fotos');
-  }
-}
-
-// Sincronizar a cada 5 segundos
-loadPhotos();
-setInterval(loadPhotos, 5000);
+// ══ STORAGE ══
+let photos=JSON.parse(localStorage.getItem('bianca15_v2')||'[]');
+function save(){localStorage.setItem('bianca15_v2',JSON.stringify(photos));}
 
 // ══ GALLERY ══
-function vis(){return photos.filter(p=>p.visible);}
-
+function vis(){return photos.filter(p=>!p.hidden);}
 function renderGallery(){
   const grid=document.getElementById('galleryGrid');
   const cnt=document.getElementById('photoCount');
@@ -398,8 +383,7 @@ function renderGallery(){
   [...v].reverse().forEach((p,i)=>{
     const el=document.createElement('div');
     el.className='gallery-item';el.style.animationDelay=`${i*.05}s`;
-    const photoUrl = p.imageUrl || `${API_URL}/api/photo/${p.id}/image`;
-    el.innerHTML=`<img src="${photoUrl}" alt="" loading="lazy"><div class="gallery-overlay"><span class="gallery-author">${p.author?'📸 '+p.author:''}</span></div>`;
+    el.innerHTML=`<img src="${p.data}" alt="" loading="lazy"><div class="gallery-overlay"><span class="gallery-author">${p.author?'📸 '+p.author:''}</span></div>`;
     el.addEventListener('click',()=>openLightbox(p));
     grid.appendChild(el);
   });
@@ -418,8 +402,7 @@ function renderCarousel(){
   track.innerHTML='';dots.innerHTML='';
   vp.forEach((p,i)=>{
     const s=document.createElement('div');s.className='carousel-slide';
-    const photoUrl = p.imageUrl || `${API_URL}/api/photo/${p.id}/image`;
-    s.innerHTML=`<img src="${photoUrl}" alt="" loading="lazy"><div class="carousel-slide-overlay"><span class="carousel-slide-author">${p.author?'📸 '+p.author:''}</span></div>`;
+    s.innerHTML=`<img src="${p.data}" alt="" loading="lazy"><div class="carousel-slide-overlay"><span class="carousel-slide-author">${p.author?'📸 '+p.author:''}</span></div>`;
     s.addEventListener('click',()=>openLightbox(p));
     track.appendChild(s);
     const dot=document.createElement('div');dot.className='carousel-dot'+(i===ci?' active':'');
@@ -452,48 +435,57 @@ ub.addEventListener('dragleave',()=>ub.classList.remove('drag-over'));
 ub.addEventListener('drop',e=>{e.preventDefault();ub.classList.remove('drag-over');handleFiles(e.dataTransfer.files);});
 fi.addEventListener('change',()=>handleFiles(fi.files));
 
+async function uploadToCloudinary(file){
+  const formData=new FormData();
+  formData.append('file',file);
+  formData.append('upload_preset',CLOUDINARY_UPLOAD_PRESET);
+  
+  try{
+    const response=await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,{
+      method:'POST',
+      body:formData
+    });
+    if(!response.ok)throw new Error('Erro no upload');
+    const data=await response.json();
+    return data.secure_url;
+  }catch(err){
+    console.error('Erro ao fazer upload:',err);
+    showToast('❌ Erro ao fazer upload: '+err.message);
+    return null;
+  }
+}
+
 async function handleFiles(files){
   const arr=Array.from(files);if(!arr.length)return;
-  const bar=document.getElementById('progressBar');let done=0;
+  const bar=document.getElementById('progressBar');
   const author=document.getElementById('authorName').value.trim();
   
+  if(arr.some(f=>f.size>50*1024*1024)){showToast('⚠️ Arquivo muito grande (máx 50MB)');return;}
+  
+  let done=0;
   for(const file of arr){
-    if(file.size>50*1024*1024){showToast('Arquivo muito grande: '+file.name);continue;}
-    
-    const formData = new FormData();
-    formData.append('photo', file);
-    formData.append('author', author);
-    
-    try {
-      const res = await fetch(`${API_URL}/api/upload`, {
-        method: 'POST',
-        body: formData
-      });
-      
-      if(!res.ok) throw new Error(await res.text());
-      
-      done++;
-      bar.style.width=`${done/arr.length*100}%`;
-      
-      if(done===arr.length){
-        loadPhotos(); // Recarregar fotos
-        setTimeout(()=>{bar.style.width='0%';},600);
-        showToast(`${done} ${done===1?'foto adicionada':'fotos adicionadas'}! 🌸`);
-        document.getElementById('galeria').scrollIntoView({behavior:'smooth'});
-      }
-    } catch(e){
-      showToast('Erro ao enviar '+file.name+': '+e.message);
-      console.error(e);
+    const imageUrl=await uploadToCloudinary(file);
+    if(imageUrl){
+      photos.push({id:Date.now()+'_'+Math.random().toString(36).slice(2),data:imageUrl,author,time:Date.now(),hidden:false});
     }
+    done++;
+    bar.style.width=`${done/arr.length*100}%`;
   }
   
+  if(done>0){
+    save();
+    renderGallery();
+    renderCarousel();
+    setTimeout(()=>{bar.style.width='0%';},600);
+    showToast(`✅ ${done} ${done===1?'foto adicionada':'fotos adicionadas'}! 🌸`);
+    document.getElementById('galeria').scrollIntoView({behavior:'smooth'});
+  }
   fi.value='';
 }
 
 // ══ LIGHTBOX ══
 function openLightbox(p){
-  const photoUrl = p.imageUrl || `${API_URL}/api/photo/${p.id}/image`;
-  document.getElementById('lightboxImg').src=photoUrl;
+  document.getElementById('lightboxImg').src=p.data;
   document.getElementById('lightboxCaption').textContent=p.author?'📸 '+p.author:'';
   document.getElementById('lightbox').classList.add('active');document.body.style.overflow='hidden';
 }
@@ -517,29 +509,18 @@ function openAdmin(e){
   document.getElementById('loginOverlay').style.display='flex';
   setTimeout(()=>document.getElementById('adminPwInput').focus(),80);
 }
-
-async function tryLogin(){
+function tryLogin(){
   const pw=document.getElementById('adminPwInput').value;
-  try {
-    const res = await fetch(`${API_URL}/api/admin/login`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({password: pw})
-    });
-    
-    if(res.ok){
-      unlocked=true;
-      document.getElementById('loginOverlay').style.display='none';
-      document.getElementById('adminPwInput').value='';
-      document.getElementById('loginError').style.display='none';
-      showPanel();
-    } else {
-      document.getElementById('loginError').style.display='block';
-      document.getElementById('adminPwInput').value='';
-      document.getElementById('adminPwInput').focus();
-    }
-  } catch(e){
-    showToast('Erro ao fazer login: '+e.message);
+  if(pw===ADMIN_PASSWORD){
+    unlocked=true;
+    document.getElementById('loginOverlay').style.display='none';
+    document.getElementById('adminPwInput').value='';
+    document.getElementById('loginError').style.display='none';
+    showPanel();
+  } else {
+    document.getElementById('loginError').style.display='block';
+    document.getElementById('adminPwInput').value='';
+    document.getElementById('adminPwInput').focus();
   }
 }
 function closeLogin(){document.getElementById('loginOverlay').style.display='none';document.getElementById('adminPwInput').value='';document.getElementById('loginError').style.display='none';}
@@ -548,163 +529,64 @@ function closeAdmin(){document.getElementById('adminPanel').classList.remove('op
 
 // ══ ADMIN RENDER ══
 function setFilter(f,btn){adminFilter=f;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderAdmin();}
-
-async function renderAdmin(){
-  const pw=document.querySelector('#adminPwInput')?.value || '';
+function renderAdmin(){
   const search=(document.getElementById('adminSearch').value||'').toLowerCase();
   const grid=document.getElementById('adminGrid');
   const stats=document.getElementById('adminStats');
-  
-  try {
-    const res = await fetch(`${API_URL}/api/admin/photos`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({password: pw})
-    });
-    
-    if(!res.ok) {
-      grid.innerHTML='<div class="admin-empty">Erro ao carregar fotos</div>';
-      return;
-    }
-    
-    const allPhotos = await res.json();
-    const total=allPhotos.length,hidden=allPhotos.filter(p=>!p.visible).length,visible=total-hidden;
-    
-    stats.innerHTML=`
-      <div class="admin-stat"><span class="admin-stat-num">${total}</span><span class="admin-stat-label">Total</span></div>
-      <div class="admin-stat"><span class="admin-stat-num" style="color:#5dba7a">${visible}</span><span class="admin-stat-label">Visíveis</span></div>
-      <div class="admin-stat"><span class="admin-stat-num" style="color:var(--gold)">${hidden}</span><span class="admin-stat-label">Ocultas</span></div>
-    `;
-    
-    let filtered=allPhotos.filter(p=>{
-      if(adminFilter==='visible'&&!p.visible)return false;
-      if(adminFilter==='hidden'&&p.visible)return false;
-      if(search&&!(p.author||'').toLowerCase().includes(search))return false;
-      return true;
-    });
-    
-    if(!filtered.length){grid.innerHTML='<div class="admin-empty">Nenhuma foto encontrada</div>';return;}
-    grid.innerHTML='';
-    
-    filtered.forEach(p=>{
-      const d=new Date(p.timestamp);
-      const ts=d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-      const card=document.createElement('div');
-      const photoUrl = p.imageUrl || `${API_URL}/api/photo/${p.id}/image`;
-      card.className='admin-card'+(!p.visible?' is-hidden':'');
-      card.innerHTML=`
-        <div class="admin-card-img">
-          <img src="${photoUrl}" alt="" loading="lazy">
-          <span class="admin-card-badge ${!p.visible?'badge-hidden':'badge-visible'}">${!p.visible?'Oculta':'Visível'}</span>
-        </div>
-        <div class="admin-card-info">
-          <div class="admin-card-author">${p.author||'<em style="opacity:.4">Sem nome</em>'}</div>
-          <div class="admin-card-time">${ts}</div>
-        </div>
-        <div class="admin-card-actions">
-          <button class="admin-action action-toggle" onclick="togglePhoto('${p.id}')">${!p.visible?'Mostrar':'Ocultar'}</button>
-          <button class="admin-action action-delete" onclick="deletePhoto('${p.id}')">Excluir</button>
-        </div>`;
-      grid.appendChild(card);
-    });
-  } catch(e){
-    console.error(e);
-    grid.innerHTML='<div class="admin-empty">Erro ao carregar fotos</div>';
-  }
+  const total=photos.length,hidden=photos.filter(p=>p.hidden).length,visible=total-hidden;
+  stats.innerHTML=`
+    <div class="admin-stat"><span class="admin-stat-num">${total}</span><span class="admin-stat-label">Total</span></div>
+    <div class="admin-stat"><span class="admin-stat-num" style="color:#5dba7a">${visible}</span><span class="admin-stat-label">Visíveis</span></div>
+    <div class="admin-stat"><span class="admin-stat-num" style="color:var(--gold)">${hidden}</span><span class="admin-stat-label">Ocultas</span></div>
+  `;
+  let filtered=photos.filter(p=>{
+    if(adminFilter==='visible'&&p.hidden)return false;
+    if(adminFilter==='hidden'&&!p.hidden)return false;
+    if(search&&!(p.author||'').toLowerCase().includes(search))return false;
+    return true;
+  });
+  if(!filtered.length){grid.innerHTML='<div class="admin-empty">Nenhuma foto encontrada</div>';return;}
+  grid.innerHTML='';
+  filtered.forEach(p=>{
+    const d=new Date(p.time);
+    const ts=d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    const card=document.createElement('div');
+    card.className='admin-card'+(p.hidden?' is-hidden':'');
+    card.innerHTML=`
+      <div class="admin-card-img">
+        <img src="${p.data}" alt="" loading="lazy">
+        <span class="admin-card-badge ${p.hidden?'badge-hidden':'badge-visible'}">${p.hidden?'Oculta':'Visível'}</span>
+      </div>
+      <div class="admin-card-info">
+        <div class="admin-card-author">${p.author||'<em style="opacity:.4">Sem nome</em>'}</div>
+        <div class="admin-card-time">${ts}</div>
+      </div>
+      <div class="admin-card-actions">
+        <button class="admin-action action-toggle" onclick="togglePhoto('${p.id}')">${p.hidden?'Mostrar':'Ocultar'}</button>
+        <button class="admin-action action-delete" onclick="deletePhoto('${p.id}')">Excluir</button>
+      </div>`;
+    grid.appendChild(card);
+  });
 }
-
-async function togglePhoto(id){
-  if(!unlocked) return;
-  try {
-    const pw=document.querySelector('#adminPwInput')?.value || '';
-    const res = await fetch(`${API_URL}/api/admin/photo/${id}/toggle`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({password: pw})
-    });
-    
-    if(res.ok){
-      loadPhotos();
-      renderAdmin();
-      showToast('Status atualizado');
-    }
-  } catch(e){
-    showToast('Erro ao atualizar foto');
-    console.error(e);
-  }
+function togglePhoto(id){
+  const p=photos.find(x=>x.id===id);if(!p)return;
+  p.hidden=!p.hidden;save();renderGallery();renderCarousel();renderAdmin();
+  showToast(p.hidden?'Foto ocultada dos convidados':'Foto visível novamente');
 }
-
-async function deletePhoto(id){
-  if(!unlocked) return;
+function deletePhoto(id){
   if(!confirm('Excluir esta foto permanentemente?'))return;
-  
-  try {
-    const pw=document.querySelector('#adminPwInput')?.value || '';
-    const res = await fetch(`${API_URL}/api/admin/photo/${id}/delete`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({password: pw})
-    });
-    
-    if(res.ok){
-      loadPhotos();
-      renderAdmin();
-      showToast('Foto excluída');
-    }
-  } catch(e){
-    showToast('Erro ao excluir foto');
-    console.error(e);
-  }
+  photos=photos.filter(x=>x.id!==id);
+  save();renderGallery();renderCarousel();renderAdmin();showToast('Foto excluída');
 }
-
-async function bulkShowAll(){
-  if(!unlocked) return;
-  // Para fazer bulk, precisamos atualizar uma foto por uma
-  const pw=document.querySelector('#adminPwInput')?.value || '';
-  try {
-    const res = await fetch(`${API_URL}/api/admin/photos`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({password: pw})
-    });
-    const allPhotos = await res.json();
-    const hidden = allPhotos.filter(p=>!p.visible);
-    
-    for(const photo of hidden){
-      await fetch(`${API_URL}/api/admin/photo/${photo.id}/toggle`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({password: pw})
-      });
-    }
-    
-    loadPhotos();
-    renderAdmin();
-    showToast('Todas as fotos estão visíveis');
-  } catch(e){
-    showToast('Erro ao atualizar fotos');
-    console.error(e);
-  }
+function bulkShowAll(){
+  photos.forEach(p=>p.hidden=false);save();renderGallery();renderCarousel();renderAdmin();showToast('Todas as fotos estão visíveis');
 }
-
-async function bulkDeleteHidden(){
-  if(!unlocked) return;
-  const pw=document.querySelector('#adminPwInput')?.value || '';
-  try {
-    const res = await fetch(`${API_URL}/api/admin/delete-hidden`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({password: pw})
-    });
-    const data = await res.json();
-    
-    loadPhotos();
-    renderAdmin();
-    showToast(`${data.deleted} foto(s) excluída(s)`);
-  } catch(e){
-    showToast('Erro ao excluir fotos ocultas');
-    console.error(e);
-  }
+function bulkDeleteHidden(){
+  const c=photos.filter(p=>p.hidden).length;
+  if(!c){showToast('Nenhuma foto oculta para apagar');return;}
+  if(!confirm(`Excluir ${c} foto(s) oculta(s) permanentemente?`))return;
+  photos=photos.filter(p=>!p.hidden);
+  save();renderGallery();renderCarousel();renderAdmin();showToast(`${c} foto(s) excluída(s)`);
 }
 </script>
 </body>
