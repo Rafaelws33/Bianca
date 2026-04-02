@@ -364,9 +364,31 @@ const CLOUDINARY_BASE = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}`;
 const FETCH_URL = `https://res.cloudinary.com/${CLOUD_NAME}/image/list/bianca15.json`;
 
 // metadata de moderação: {publicId: {hidden, author}}
-const STORAGE_KEY = 'bianca15_meta';
-let meta = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-function saveMeta(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(meta)); }
+let meta = {};
+
+// Carrega metadados do servidor
+async function loadMeta() {
+  try {
+    const res = await fetch('/api/meta', { cache: 'no-store' });
+    meta = await res.json();
+  } catch(e) {
+    console.warn('Erro ao carregar metadados do servidor:', e);
+    meta = {};
+  }
+}
+
+// Salva metadados de uma foto no servidor
+async function saveMeta(photoId, data) {
+  try {
+    await fetch(`/api/meta/${photoId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  } catch(e) {
+    console.warn('Erro ao salvar metadados da foto:', e);
+  }
+}
 
 // fotos carregadas da Cloudinary
 let allPhotos = [];
@@ -560,9 +582,9 @@ async function handleFiles(files){
       if(!res.ok) throw new Error('upload error');
       const data = await res.json();
 
-      // salva author e hidden no meta local
+      // salva author e hidden no servidor
+      await saveMeta(data.public_id, { author, hidden: false });
       meta[data.public_id] = { author, hidden: false };
-      saveMeta();
     } catch(e){
       errors.push(file.name);
     }
@@ -693,15 +715,16 @@ function togglePhoto(publicId){
   p.hidden=!p.hidden;
   if(!meta[publicId]) meta[publicId]={};
   meta[publicId].hidden=p.hidden;
-  saveMeta();renderGallery();renderCarousel();renderAdmin();
+  saveMeta(publicId, { hidden: p.hidden });
+  renderGallery();renderCarousel();renderAdmin();
   showToast(p.hidden?'Foto ocultada dos convidados':'Foto visível novamente');
 }
 
 async function deletePhoto(publicId){
   if(!confirm('Excluir esta foto permanentemente da Cloudinary?'))return;
-  // Remove do meta local
+  // Remove do meta no servidor
+  await fetch(`/api/meta/${publicId}`, { method: 'DELETE' });
   delete meta[publicId];
-  saveMeta();
   // Remove localmente
   allPhotos=allPhotos.filter(x=>x.publicId!==publicId);
   renderGallery();renderCarousel();renderAdmin();
@@ -710,21 +733,25 @@ async function deletePhoto(publicId){
   // O admin marca como oculta na prática para remoção visual imediata.
 }
 
-function bulkShowAll(){
+async function bulkShowAll(){
+  const updates = [];
   allPhotos.forEach(p=>{
     p.hidden=false;
     if(!meta[p.publicId]) meta[p.publicId]={};
     meta[p.publicId].hidden=false;
+    updates.push(saveMeta(p.publicId, { hidden: false }));
   });
-  saveMeta();renderGallery();renderCarousel();renderAdmin();
+  await Promise.all(updates);
+  renderGallery();renderCarousel();renderAdmin();
   showToast('Todas as fotos estão visíveis');
 }
-function bulkDeleteHidden(){
+async function bulkDeleteHidden(){
   const hidden=allPhotos.filter(p=>p.hidden);
   if(!hidden.length){showToast('Nenhuma foto oculta');return;}
   if(!confirm(`Remover ${hidden.length} foto(s) oculta(s)?`))return;
+  const deletes = hidden.map(p => fetch(`/api/meta/${p.publicId}`, { method: 'DELETE' }));
+  await Promise.all(deletes);
   hidden.forEach(p=>{delete meta[p.publicId];});
-  saveMeta();
   allPhotos=allPhotos.filter(p=>!p.hidden);
   renderGallery();renderCarousel();renderAdmin();
   showToast(`${hidden.length} foto(s) removida(s)`);
@@ -733,9 +760,12 @@ function bulkDeleteHidden(){
 // ════════════════════════════════════
 //  INIT — carrega fotos ao abrir
 // ════════════════════════════════════
-loadAllPhotos();
-// auto-refresh a cada 30s para pegar novas fotos de convidados
-setInterval(()=>loadAllPhotos(), 30000);
+(async function init() {
+  await loadMeta();
+  await loadAllPhotos();
+  // auto-refresh a cada 30s para pegar novas fotos de convidados
+  setInterval(()=>loadAllPhotos(), 30000);
+})();
 </script>
 </body>
 </html>
