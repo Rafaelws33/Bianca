@@ -4,7 +4,7 @@
 
 Você vai hospedar seu site no Render com:
 - **Cloudinary** para armazenar as fotos (25GB/mês grátis)
-- **PostgreSQL** para metadados (1GB gratuito)
+- **Arquivo data.json** para metadados (sem banco de dados!)
 
 ---
 
@@ -23,7 +23,7 @@ git push -u origin main
 ### Se já tem repositório:
 ```bash
 git add .
-git commit -m "Add Cloudinary storage"
+git commit -m "Migrar para arquivo JSON (sem PostgreSQL)"
 git push
 ```
 
@@ -49,21 +49,7 @@ git push
 
 ---
 
-## 3️⃣ Criar Banco de Dados PostgreSQL no Render
-
-### Passo 1: PostgreSQL
-1. Abra [render.com/dashboard](https://render.com/dashboard)
-2. Clique em "New +" > "PostgreSQL"
-3. Configure:
-   - **Name:** `bianca-db`
-   - **Database:** `bianca15`
-   - **Plan:** `Free`
-4. Clique em "Create Database"
-5. **Copie a "Internal Database URL"**
-
----
-
-## 4️⃣ Criar Serviço Web no Render
+## 3️⃣ Criar Serviço Web no Render
 
 ### Passo 1: Login no Render
 1. Acesse [render.com](https://render.com)
@@ -92,7 +78,6 @@ Role até **Environment Variables** e adicione:
 
 | Nome | Valor |
 |------|-------|
-| `DATABASE_URL` | *(Cole a URL do PostgreSQL)* |
 | `CLOUDINARY_CLOUD_NAME` | *(Seu Cloud Name)* |
 | `CLOUDINARY_API_KEY` | *(Seu API Key)* |
 | `CLOUDINARY_API_SECRET` | *(Seu API Secret)* |
@@ -105,7 +90,7 @@ Você verá uma URL assim: **`https://bianca-photos.onrender.com`**
 
 ---
 
-## 5️⃣ Testar
+## 4️⃣ Testar
 
 1. Abra `https://bianca-photos.onrender.com`
 2. Tente enviar uma foto
@@ -126,15 +111,15 @@ Você verá uma URL assim: **`https://bianca-photos.onrender.com`**
 
 ### "Error 503" ou "Timeout"
 - Aguarde alguns minutos e recarregue
-- Aumentar plan do Render (de Free para Starter)
-
-### "Erro ao conectar ao banco"
-- Verifique se a DATABASE_URL está correta
-- Verifique se o PostgreSQL está ativo no Render
+- Ou construa um plano pago no Render
 
 ### "Erro ao fazer upload" ou fotos não aparecem
 - Verifique as credenciais do Cloudinary
 - Verifique os logs no Render (aba "Logs")
+
+### "Erro de permissão" ao enviar
+- Certifique-se que o Cloudinary está ativo
+- Regenere as credenciais se necessário
 
 ---
 
@@ -172,9 +157,10 @@ Seu site está online! Compartilhe o link:
 | Serviço | Limite Free | Suficiente? |
 |---------|-----------|-----------|
 | **Cloudinary** | 25GB/mês | ✅ Sim (centenas de fotos) |
-| **PostgreSQL Render** | 1GB | ✅ Sim (só metadados) |
-| **Render Web Service** | Ilimitado | ✅ Sim |
+| **Render Web Service** | CPU/RAM limitado | ✅ Sim |
+| **Arquivo data.json** | Ilimitado | ✅ Sim (metadados = pequeno) |
 
 **Dúvidas?** Verifique a aba "Logs" no Render para mensagens de error.
+
 
 

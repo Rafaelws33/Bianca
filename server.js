@@ -2,12 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import dotenv from 'dotenv';
-import pkg from 'pg';
 import { v2 as cloudinary } from 'cloudinary';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const { Pool } = pkg;
 dotenv.config();
 
 // Configurar Cloudinary
@@ -21,44 +20,42 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-// ==================== CONFIG ====================
+const DATA_FILE = path.join(__dirname, 'data.json');
 const PORT = process.env.PORT || 3000;
-
-// Conectar ao PostgreSQL
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
-});
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'bianca2026';
 
 // ==================== MIDDLEWARE ====================
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-// ==================== DATABASE INIT ====================
-async function initDatabase() {
+// ==================== HELPERS ====================
+
+// Ler dados do arquivo JSON
+function readData() {
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS photos (
-        id SERIAL PRIMARY KEY,
-        photo_id TEXT UNIQUE NOT NULL,
-        author VARCHAR(100),
-        cloudinary_url TEXT NOT NULL,
-        cloudinary_public_id TEXT NOT NULL,
-        visible BOOLEAN DEFAULT true,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      
-      CREATE INDEX IF NOT EXISTS idx_visible ON photos(visible);
-    `);
-    console.log('✅ Database initialized');
+    if (fs.existsSync(DATA_FILE)) {
+      const data = fs.readFileSync(DATA_FILE, 'utf8');
+      return JSON.parse(data);
+    }
   } catch (error) {
-    console.error('❌ Database error:', error);
-    process.exit(1);
+    console.warn('Erro ao ler data.json:', error.message);
+  }
+  return [];
+}
+
+// Salvar dados no arquivo JSON
+function saveData(data) {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (error) {
+    console.error('Erro ao salvar data.json:', error);
   }
 }
 
-initDatabase();
+function checkAdminPassword(password) {
+  return password === ADMIN_PASSWORD;
+}
 
 // ==================== PHOTO UPLOAD ====================
 app.post('/api/upload', upload.single('photo'), async (req, res) => {
@@ -79,36 +76,36 @@ app.post('/api/upload', upload.single('photo'), async (req, res) => {
         quality: 'auto',
         fetch_format: 'auto'
       },
-      async (error, result) => {
+      (error, result) => {
         if (error) {
           console.error('Erro ao fazer upload no Cloudinary:', error);
           return res.status(500).json({ error: 'Erro ao fazer upload: ' + error.message });
         }
 
         try {
-          // Salvar metadados no PostgreSQL
-          const dbResult = await pool.query(
-            `INSERT INTO photos (photo_id, author, cloudinary_url, cloudinary_public_id, visible, created_at)
-             VALUES ($1, $2, $3, $4, true, CURRENT_TIMESTAMP)
-             RETURNING photo_id, author, visible, created_at`,
-            [photoId, author || 'Anônimo', result.secure_url, result.public_id]
-          );
+          // Ler dados atuais
+          const photos = readData();
 
-          const photo = dbResult.rows[0];
+          // Adicionar nova foto
+          const photo = {
+            id: photoId,
+            author: author || 'Anônimo',
+            timestamp: new Date().toISOString(),
+            visible: true,
+            imageUrl: result.secure_url,
+            cloudinaryPublicId: result.public_id
+          };
+
+          photos.push(photo);
+          saveData(photos);
 
           res.json({
             success: true,
             message: 'Foto enviada com sucesso!',
-            photo: {
-              id: photo.photo_id,
-              author: photo.author,
-              timestamp: photo.created_at,
-              visible: photo.visible,
-              imageUrl: result.secure_url
-            }
+            photo
           });
         } catch (dbError) {
-          console.error('Erro ao salvar no banco:', dbError);
+          console.error('Erro ao salvar metadados:', dbError);
           res.status(500).json({ error: 'Erro ao salvar metadados: ' + dbError.message });
         }
       }
@@ -123,15 +120,11 @@ app.post('/api/upload', upload.single('photo'), async (req, res) => {
 });
 
 // ==================== GET ALL PHOTOS ====================
-app.get('/api/photos', async (req, res) => {
+app.get('/api/photos', (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT photo_id as id, author, visible, created_at as timestamp, cloudinary_url as "imageUrl"
-       FROM photos 
-       WHERE visible = true
-       ORDER BY created_at DESC`
-    );
-    res.json(result.rows);
+    const photos = readData();
+    const visiblePhotos = photos.filter(p => p.visible);
+    res.json(visiblePhotos);
   } catch (error) {
     console.error('Erro ao buscar fotos:', error);
     res.status(500).json({ error: 'Erro ao buscar fotos' });
@@ -139,15 +132,13 @@ app.get('/api/photos', async (req, res) => {
 });
 
 // ==================== GET STATS ====================
-app.get('/api/stats', async (req, res) => {
+app.get('/api/stats', (req, res) => {
   try {
-    const totalResult = await pool.query('SELECT COUNT(*) as count FROM photos');
-    const visibleResult = await pool.query('SELECT COUNT(*) as count FROM photos WHERE visible = true');
-    
+    const photos = readData();
     res.json({
-      total: parseInt(totalResult.rows[0].count),
-      visible: parseInt(visibleResult.rows[0].count),
-      hidden: parseInt(totalResult.rows[0].count) - parseInt(visibleResult.rows[0].count)
+      total: photos.length,
+      visible: photos.filter(p => p.visible).length,
+      hidden: photos.filter(p => !p.visible).length
     });
   } catch (error) {
     console.error('Erro ao buscar stats:', error);
@@ -156,12 +147,6 @@ app.get('/api/stats', async (req, res) => {
 });
 
 // ==================== ADMIN ENDPOINTS ====================
-
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'bianca2026';
-
-function checkAdminPassword(password) {
-  return password === ADMIN_PASSWORD;
-}
 
 // Login
 app.post('/api/admin/login', (req, res) => {
@@ -174,19 +159,15 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 // GET todas as fotos (admin)
-app.post('/api/admin/photos', async (req, res) => {
+app.post('/api/admin/photos', (req, res) => {
   const { password } = req.body;
   if (!checkAdminPassword(password)) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
 
   try {
-    const result = await pool.query(
-      `SELECT photo_id as id, author, visible, created_at as timestamp, cloudinary_url as "imageUrl"
-       FROM photos
-       ORDER BY created_at DESC`
-    );
-    res.json(result.rows);
+    const photos = readData();
+    res.json(photos);
   } catch (error) {
     console.error('Erro ao buscar fotos:', error);
     res.status(500).json({ error: 'Erro ao buscar fotos' });
@@ -194,26 +175,24 @@ app.post('/api/admin/photos', async (req, res) => {
 });
 
 // Toggle visibility
-app.post('/api/admin/photo/:id/toggle', async (req, res) => {
+app.post('/api/admin/photo/:id/toggle', (req, res) => {
   const { password } = req.body;
   if (!checkAdminPassword(password)) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
 
   try {
-    const result = await pool.query(
-      `UPDATE photos 
-       SET visible = NOT visible 
-       WHERE photo_id = $1
-       RETURNING visible`,
-      [req.params.id]
-    );
+    const photos = readData();
+    const photo = photos.find(p => p.id === req.params.id);
 
-    if (result.rows.length === 0) {
+    if (!photo) {
       return res.status(404).json({ error: 'Foto não encontrada' });
     }
 
-    res.json({ success: true, visible: result.rows[0].visible });
+    photo.visible = !photo.visible;
+    saveData(photos);
+
+    res.json({ success: true, visible: photo.visible });
   } catch (error) {
     console.error('Erro ao atualizar visibilidade:', error);
     res.status(500).json({ error: 'Erro ao atualizar visibilidade' });
@@ -221,37 +200,31 @@ app.post('/api/admin/photo/:id/toggle', async (req, res) => {
 });
 
 // Delete photo
-app.post('/api/admin/photo/:id/delete', async (req, res) => {
+app.post('/api/admin/photo/:id/delete', (req, res) => {
   const { password } = req.body;
   if (!checkAdminPassword(password)) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
 
   try {
-    // Buscar public_id do Cloudinary
-    const photoResult = await pool.query(
-      'SELECT cloudinary_public_id FROM photos WHERE photo_id = $1',
-      [req.params.id]
-    );
+    const photos = readData();
+    const photo = photos.find(p => p.id === req.params.id);
 
-    if (photoResult.rows.length === 0) {
+    if (!photo) {
       return res.status(404).json({ error: 'Foto não encontrada' });
     }
 
-    const publicId = photoResult.rows[0].cloudinary_public_id;
-
     // Deletar do Cloudinary
     try {
-      await cloudinary.uploader.destroy(publicId);
+      await cloudinary.uploader.destroy(photo.cloudinaryPublicId);
     } catch (cloudError) {
       console.warn('Aviso: erro ao deletar do Cloudinary:', cloudError.message);
     }
 
-    // Deletar do banco de dados
-    const result = await pool.query(
-      'DELETE FROM photos WHERE photo_id = $1',
-      [req.params.id]
-    );
+    // Remover do arquivo
+    const index = photos.findIndex(p => p.id === req.params.id);
+    photos.splice(index, 1);
+    saveData(photos);
 
     res.json({ success: true });
   } catch (error) {
@@ -268,26 +241,23 @@ app.post('/api/admin/delete-hidden', async (req, res) => {
   }
 
   try {
-    // Buscar todas as fotos ocultas
-    const hiddenPhotos = await pool.query(
-      'SELECT cloudinary_public_id FROM photos WHERE visible = false'
-    );
+    const photos = readData();
+    const hiddenPhotos = photos.filter(p => !p.visible);
 
     // Deletar do Cloudinary
-    for (const photo of hiddenPhotos.rows) {
+    for (const photo of hiddenPhotos) {
       try {
-        await cloudinary.uploader.destroy(photo.cloudinary_public_id);
+        await cloudinary.uploader.destroy(photo.cloudinaryPublicId);
       } catch (cloudError) {
         console.warn('Aviso ao deletar do Cloudinary:', cloudError.message);
       }
     }
 
-    // Deletar do banco de dados
-    const result = await pool.query(
-      'DELETE FROM photos WHERE visible = false'
-    );
+    // Remover do arquivo
+    const updatedPhotos = photos.filter(p => p.visible);
+    saveData(updatedPhotos);
 
-    res.json({ success: true, deleted: result.rowCount });
+    res.json({ success: true, deleted: hiddenPhotos.length });
   } catch (error) {
     console.error('Erro ao deletar ocultas:', error);
     res.status(500).json({ error: 'Erro ao deletar ocultas' });
@@ -297,6 +267,6 @@ app.post('/api/admin/delete-hidden', async (req, res) => {
 // ==================== SERVER START ====================
 app.listen(PORT, () => {
   console.log(`🎉 Servidor rodando em http://localhost:${PORT}`);
-  console.log(`📁 Banco de dados: PostgreSQL`);
   console.log(`☁️  Armazenamento: Cloudinary`);
+  console.log(`📄 Metadados: data.json`);
 });

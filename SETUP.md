@@ -21,67 +21,32 @@
 cp .env.example .env
 ```
 
-Edite `.env` e adicione:
+Edite `.env` e adicione as **NOVAS credenciais do Cloudinary**:
 ```
 CLOUDINARY_CLOUD_NAME=seu_cloud_name
-CLOUDINARY_API_KEY=seu_api_key
-CLOUDINARY_API_SECRET=seu_api_secret
-DATABASE_URL=sua_database_url
+CLOUDINARY_API_KEY=sua_api_key_novo
+CLOUDINARY_API_SECRET=seu_secret_novo
 ADMIN_PASSWORD=bianca2026
+PORT=3000
 ```
 
 ---
 
-## 2️⃣ Configurar Banco de Dados PostgreSQL
-
-### Para Desenvolvimento Local:
-
-Se você tiver PostgreSQL instalado:
-```bash
-# Criar banco local
-createdb bianca15
-
-# Adicionar ao .env
-DATABASE_URL=postgresql://localhost/bianca15
-```
-
-### Para Render (Produção):
-
-1. Crie uma conta em [render.com](https://render.com)
-2. Vá para "Dashboard" > "New" > "PostgreSQL"
-3. Configure:
-   - **Name:** `bianca-db`
-   - **Database:** `bianca15`
-   - **Plan:** `Free`
-4. Clique "Create"
-5. Copie a **Internal Database URL**
-6. Cole em `.env` como `DATABASE_URL=...`
-
----
-
-## 3️⃣ Instalar e Rodar Localmente
+## 2️⃣ Instalar e Rodar Localmente
 
 ```bash
 # Instalar dependências
 npm install
 
-# Criar arquivo .env
-cp .env.example .env
-
-# Adicionar credenciais do Cloudinary e Database URL
-
-# Iniciar servidor
+# Rodar servidor
 npm start
-
-# Ou com auto-reload:
-npm run dev
 ```
 
 Acesso: `http://localhost:3000`
 
 ---
 
-## 4️⃣ Endpoints da API
+## 3️⃣ Endpoints da API
 
 ### Upload Foto
 ```
@@ -96,7 +61,7 @@ Resposta: { success, photo: { id, author, imageUrl, ... } }
 ### Listar Fotos (Público)
 ```
 GET /api/photos
-Retorna: Array de fotos visíveis com imageUrl do Cloudinary
+Retorna: Array de fotos visíveis com URLs do Cloudinary
 ```
 
 ### Login Admin
@@ -121,7 +86,7 @@ Body: { password: "bianca2026" }
 ```
 POST /api/admin/photo/:id/delete
 Body: { password: "bianca2026" }
-Deleta do Cloudinary e do banco
+Deleta do Cloudinary e do arquivo data.json
 ```
 
 ### Deletar Todas as Ocultas
@@ -132,13 +97,25 @@ Body: { password: "bianca2026" }
 
 ---
 
+## 🗂️ Estrutura de Armazenamento
+
+```
+Bianca/
+├── index.html               ← Site frontend
+├── server.js                ← Backend Express
+├── data.json                ← Metadados (gerado automaticamente)
+├── package.json
+└── .env                     ← Credenciais (NÃO commitado)
+```
+
+---
+
 ## ⚡ Variáveis de Ambiente (.env)
 
 ```
-DATABASE_URL=postgresql://user:pass@host/dbname
 CLOUDINARY_CLOUD_NAME=seu_cloud_name
-CLOUDINARY_API_KEY=seu_api_key
-CLOUDINARY_API_SECRET=seu_api_secret
+CLOUDINARY_API_KEY=sua_api_key
+CLOUDINARY_API_SECRET=seu_secret
 ADMIN_PASSWORD=bianca2026
 PORT=3000
 ```
@@ -148,5 +125,6 @@ PORT=3000
 ## ✅ Tudo Pronto!
 
 Veja `DEPLOY.md` para instruções de deploy no Render.
+
 
 
